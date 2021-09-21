@@ -1,0 +1,6 @@
+#ignore terraform state files
+.terraform/*
+terraform.lock.hcl
+terraform.tfstate
+terraformstatefile
+providers/*

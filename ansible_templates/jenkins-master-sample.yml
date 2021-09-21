@@ -1,0 +1,89 @@
+#Ansible Jenkins Master, sample playbook - jenkins-master-sample.yml
+---
+- hosts: "{{ passed_in_hosts }}"
+  become: yes
+  remote_user: ec2-user
+  become_user: root
+  tasks:
+    #iterate 3 times and install dependencies
+    - name: install dependencies
+      yum:
+        name: "{{ package }} "
+        state: present
+      vars:
+        package:
+        - wget
+        - java-1.8.0-openjdk-devel
+        - git
+        - https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+    - name: Enable EPEL repository
+      command: yum-config-manager --enable epel
+    
+    #Clone preconfigured files from linuxacademy repo on git 
+    - name: clone repo
+      git:
+        repo: https://github.com/linuxacademy/content-terraform-jenkins.git
+        dest: /tmp/jenkins
+    
+    #download jenkins repo configuration
+    - name: Setup Jenkins Repo
+      get_url:
+        url: https://pkg.jenkins.io/redhat/jenkins.repo
+        dest: /etc/yum.repos.d/jenkins.repo
+   
+    #import Jenkins GPG key
+    - name: Import Jenkins Repo GPG key
+      rpm_key:
+        state: present
+        key: https://pkg.jenkins.io/redhat/jenkins.io.key
+    
+    #install actual Jenkins binary
+    - name: install Jenkins
+      yum:
+        name: jenkins
+        state: present
+        
+    #Stop Jenkins temporaraliy
+    - name: Temporarily Stop Jenkins
+      service: 
+        name: jenkins 
+        state: stopped
+  
+     #shell into jenkins
+    - name: Modify user shell
+      user:
+        name: jenkins
+        shell: /bin/bash
+    
+    #deletes default jenkins stuff we don't need
+    - name: Delete Jenkins default dir
+      file:
+        state: absent
+        path: /var/lib/jenkins
+    
+    #copies over precofigured linuxacademy files downloaded from git earlier
+    - name: Copy over cloned Jenkins /var/lib/jenkins
+      copy:
+        remote_src: yes
+        src: /tmp/jenkins/jenkins
+        dest: /var/lib
+        
+   #gives ownership to jenkins for new copied files above so jenkins can access      
+    - name: Restore jenkins user ownership on /var/lib/jenkins
+      file:
+        path: /var/lib/jenkins
+        state: directory
+        recurse: yes
+        owner: jenkins
+    
+    #start jenkins
+    - name: Start Jenkins
+      service:
+        name: jenkins
+        state: started
+        enabled: yes
+    #loop over jenkins log files and look for string to see when its ready and running, then break out of loop
+    - name: Wait until Jenkins is up
+      shell: result_first=1; while [[ $result_first != 0 ]]; do if [[ `grep 'Jenkins is fully up and running' /var/log/jenkins/jenkins.log` ]];then result_first=0;else sleep 4;fi;done
+      register: result
+      until: result.rc == 0
